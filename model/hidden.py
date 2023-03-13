@@ -101,12 +101,12 @@ class Hidden:
             g_loss_adv = self.bce_with_logits_loss(d_on_encoded_for_enc, g_target_label_encoded)
 
             if self.vgg_loss == None:
-                #g_loss_enc = self.mse_loss(encoded_images, images)
+                # g_loss_enc = self.mse_loss(encoded_images, images)
                 g_loss_enc = self.mask_loss(encoded_images,images)
             else:
                 vgg_on_cov = self.vgg_loss(images)
                 vgg_on_enc = self.vgg_loss(encoded_images)
-                #g_loss_enc = self.mse_loss(vgg_on_cov, vgg_on_enc)
+                # g_loss_enc = self.mse_loss(vgg_on_cov, vgg_on_enc)
                 g_loss_enc = self.mask_loss(encoded_images,images)
 
             g_loss_dec = self.mse_loss(decoded_messages, messages)
