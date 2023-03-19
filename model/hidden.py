@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+from piqa import SSIM
 
 from options import HiDDenConfiguration
 from model.discriminator import Discriminator
@@ -61,7 +62,8 @@ class Hidden:
                 else:
                     running_sum+=(target-output)**2
         #loss = torch.mean((output-target)**2)
-        loss = torch.mean(running_sum)
+        #loss = torch.mean(running_sum)
+        loss = 1-SSIM().cuda()
         return loss
     def train_on_batch(self, batch: list):
         """
@@ -83,13 +85,13 @@ class Hidden:
             g_target_label_encoded = torch.full((batch_size, 1), self.cover_label, device=self.device)
 
             d_on_cover = self.discriminator(images)
-            d_loss_on_cover = self.bce_with_logits_loss(d_on_cover, d_target_label_cover)
+            d_loss_on_cover = self.bce_with_logits_loss(d_on_cover, d_target_label_cover.float())
             d_loss_on_cover.backward()
 
             # train on fake
             encoded_images, noised_images, decoded_messages = self.encoder_decoder(images, messages)
             d_on_encoded = self.discriminator(encoded_images.detach())
-            d_loss_on_encoded = self.bce_with_logits_loss(d_on_encoded, d_target_label_encoded)
+            d_loss_on_encoded = self.bce_with_logits_loss(d_on_encoded, d_target_label_encoded.float())
 
             d_loss_on_encoded.backward()
             self.optimizer_discrim.step()
@@ -98,16 +100,16 @@ class Hidden:
             self.optimizer_enc_dec.zero_grad()
             # target label for encoded images should be 'cover', because we want to fool the discriminator
             d_on_encoded_for_enc = self.discriminator(encoded_images)
-            g_loss_adv = self.bce_with_logits_loss(d_on_encoded_for_enc, g_target_label_encoded)
+            g_loss_adv = self.bce_with_logits_loss(d_on_encoded_for_enc, g_target_label_encoded.float())
 
             if self.vgg_loss == None:
-                # g_loss_enc = self.mse_loss(encoded_images, images)
-                g_loss_enc = self.mask_loss(encoded_images,images)
+                g_loss_enc = self.mse_loss(encoded_images, images)
+                # g_loss_enc = self.mask_loss(encoded_images,images)
             else:
                 vgg_on_cov = self.vgg_loss(images)
                 vgg_on_enc = self.vgg_loss(encoded_images)
-                # g_loss_enc = self.mse_loss(vgg_on_cov, vgg_on_enc)
-                g_loss_enc = self.mask_loss(encoded_images,images)
+                g_loss_enc = self.mse_loss(vgg_on_cov, vgg_on_enc)
+                # g_loss_enc = self.mask_loss(vgg_on_cov,vgg_on_enc)
 
             g_loss_dec = self.mse_loss(decoded_messages, messages)
             g_loss = self.config.adversarial_loss * g_loss_adv + self.config.encoder_loss * g_loss_enc \
@@ -158,24 +160,24 @@ class Hidden:
             g_target_label_encoded = torch.full((batch_size, 1), self.cover_label, device=self.device)
 
             d_on_cover = self.discriminator(images)
-            d_loss_on_cover = self.bce_with_logits_loss(d_on_cover, d_target_label_cover)
+            d_loss_on_cover = self.bce_with_logits_loss(d_on_cover, d_target_label_cover.float())
 
             encoded_images, noised_images, decoded_messages = self.encoder_decoder(images, messages)
 
             d_on_encoded = self.discriminator(encoded_images)
-            d_loss_on_encoded = self.bce_with_logits_loss(d_on_encoded, d_target_label_encoded)
+            d_loss_on_encoded = self.bce_with_logits_loss(d_on_encoded, d_target_label_encoded.float())
 
             d_on_encoded_for_enc = self.discriminator(encoded_images)
-            g_loss_adv = self.bce_with_logits_loss(d_on_encoded_for_enc, g_target_label_encoded)
+            g_loss_adv = self.bce_with_logits_loss(d_on_encoded_for_enc, g_target_label_encoded.float())
 
             if self.vgg_loss is None:
-                # g_loss_enc = self.mse_loss(encoded_images, images)
-                g_loss_enc = self.mask_loss(encoded_images,images)
+                g_loss_enc = self.mse_loss(encoded_images, images)
+                # g_loss_enc = self.mask_loss(encoded_images,images)
             else:
                 vgg_on_cov = self.vgg_loss(images)
                 vgg_on_enc = self.vgg_loss(encoded_images)
-                # g_loss_enc = self.mse_loss(vgg_on_cov, vgg_on_enc)
-                g_loss_enc = self.mask_loss(encoded_images,images)
+                g_loss_enc = self.mse_loss(vgg_on_cov, vgg_on_enc)
+                # g_loss_enc = self.mask_loss(encoded_images,images)
 
             g_loss_dec = self.mse_loss(decoded_messages, messages)
             g_loss = self.config.adversarial_loss * g_loss_adv + self.config.encoder_loss * g_loss_enc \
