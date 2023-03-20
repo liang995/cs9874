@@ -51,20 +51,6 @@ class Hidden:
             discrim_final = self.discriminator._modules['linear']
             discrim_final.weight.register_hook(tb_logger.grad_hook_by_name('grads/discrim_out'))
 
-    def mask_loss(output,target):
-        out_w = output.W
-        out_H = output.H
-        running_sum = 0
-        for i in range(out_w):
-            for j in range(out_H):
-                if i<(out_w+5)/2 and i>(out_w-5)/2 and j>(out_H-5)/2 and j<(out_H+5)/2:
-                    running_sum+=((target-output)*1.5)**2
-                else:
-                    running_sum+=(target-output)**2
-        #loss = torch.mean((output-target)**2)
-        #loss = torch.mean(running_sum)
-        loss = 1-SSIM().cuda()
-        return loss
     def train_on_batch(self, batch: list):
         """
         Trains the network on a single batch consisting of images and messages
@@ -200,3 +186,17 @@ class Hidden:
 
     def to_stirng(self):
         return '{}\n{}'.format(str(self.encoder_decoder), str(self.discriminator))
+def mask_loss(output: torch.Tensor,target: torch.Tensor):
+        out_w = output.W
+        out_H = output.H
+        # running_sum = 0
+        for i in range(out_w):
+            for j in range(out_H):
+                if i<(out_w+5)/2 and i>(out_w-5)/2 and j>(out_H-5)/2 and j<(out_H+5)/2:
+                    # running_sum+=((target[i][j]-output[i][j])*1.5)**2
+                    target[i,j]*=1.5
+                else:
+                    #running_sum+=(target[i][j]-output[i][j])**2
+                    pass
+        loss = torch.mean((output-target)**2)
+        return loss
