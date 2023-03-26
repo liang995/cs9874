@@ -195,8 +195,11 @@ def mask_loss(output: torch.Tensor,target: torch.Tensor):
                 if i<(out_w+5)/2 and i>(out_w-5)/2 and j>(out_H-5)/2 and j<(out_H+5)/2:
                     # running_sum+=((target[i][j]-output[i][j])*1.5)**2
                     target[i,j]*=1.5
+                    output[i,j]*=1.5
                 else:
                     #running_sum+=(target[i][j]-output[i][j])**2
                     pass
-        loss = torch.mean((output-target)**2)
+        # loss = torch.mean((output-target)**2) masking with MSE
+        ssim = SSIM().cuda() #masking with ssim
+        loss = 1 - ssim(output,target)
         return loss
