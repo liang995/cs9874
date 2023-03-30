@@ -1,6 +1,10 @@
 import torch.nn as nn
 from options import HiDDenConfiguration
 from model.conv_bn_relu import ConvBNRelu
+from model.gabor import Gabor
+from torchvision import transforms
+import torch 
+
 
 class Discriminator(nn.Module):
     """
@@ -18,7 +22,26 @@ class Discriminator(nn.Module):
         self.linear = nn.Linear(config.discriminator_channels, 1)
 
     def forward(self, image):
-        X = self.before_linear(image)
+        sharpened = None
+        combined = []
+        if image.shape[1]==3:
+            for i in range(image.shape[0]):
+                T1= torch.narrow(image, 0,0 ,1)
+                if T1.shape[0] == 1:
+                    toTensor = transforms.ToTensor()
+                    sqT1 = torch.squeeze(T1,dim=0)
+                    transT1 = torch.reshape(sqT1,(128,128,3))
+                    print(transT1.requires_grad)
+                    if transT1.requires_grad == True:
+                        sharpened = Gabor(transT1.detach().cpu().numpy())
+                    else:
+                        sharpened = Gabor(transT1.cpu())
+                    combined.append(toTensor(sharpened.finalimg).reshape(3,128,128).to("cuda:0"))
+            combined = torch.stack(combined)
+            X = self.before_linear(combined)
+        else:
+            X = self.before_linear(image)
+        # X = self.before_linear(image)
         # the output is of shape b x c x 1 x 1, and we want to squeeze out the last two dummy dimensions and make
         # the tensor of shape b x c. If we just call squeeze_() it will also squeeze the batch dimension when b=1.
         X.squeeze_(3).squeeze_(2)

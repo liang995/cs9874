@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from piqa import SSIM
+from piqa import SSIM,FSIM
 
 from options import HiDDenConfiguration
 from model.discriminator import Discriminator
@@ -58,7 +58,6 @@ class Hidden:
         :return: dictionary of error metrics from Encoder, Decoder, and Discriminator on the current batch
         """
         images, messages = batch
-
         batch_size = images.shape[0]
         self.encoder_decoder.train()
         self.discriminator.train()
@@ -69,7 +68,6 @@ class Hidden:
             d_target_label_cover = torch.full((batch_size, 1), self.cover_label, device=self.device)
             d_target_label_encoded = torch.full((batch_size, 1), self.encoded_label, device=self.device)
             g_target_label_encoded = torch.full((batch_size, 1), self.cover_label, device=self.device)
-
             d_on_cover = self.discriminator(images)
             d_loss_on_cover = self.bce_with_logits_loss(d_on_cover, d_target_label_cover.float())
             d_loss_on_cover.backward()
@@ -89,13 +87,13 @@ class Hidden:
             g_loss_adv = self.bce_with_logits_loss(d_on_encoded_for_enc, g_target_label_encoded.float())
 
             if self.vgg_loss == None:
-                g_loss_enc = self.mse_loss(encoded_images, images)
-                # g_loss_enc = self.mask_loss(encoded_images,images)
+                # g_loss_enc = self.mse_loss(encoded_images, images)
+                g_loss_enc = self.mask_loss(encoded_images,images)
             else:
                 vgg_on_cov = self.vgg_loss(images)
                 vgg_on_enc = self.vgg_loss(encoded_images)
-                g_loss_enc = self.mse_loss(vgg_on_cov, vgg_on_enc)
-                # g_loss_enc = self.mask_loss(vgg_on_cov,vgg_on_enc)
+                # g_loss_enc = self.mse_loss(vgg_on_cov, vgg_on_enc)
+                g_loss_enc = self.mask_loss(vgg_on_cov,vgg_on_enc)
 
             g_loss_dec = self.mse_loss(decoded_messages, messages)
             g_loss = self.config.adversarial_loss * g_loss_adv + self.config.encoder_loss * g_loss_enc \
@@ -110,7 +108,7 @@ class Hidden:
 
         losses = {
             'loss           ': g_loss.item(),
-            'encoder_mse    ': g_loss_enc.item(),
+            'encoder_loss    ': g_loss_enc.item(),
             'dec_mse        ': g_loss_dec.item(),
             'bitwise-error  ': bitwise_avg_err,
             'adversarial_bce': g_loss_adv.item(),
@@ -157,13 +155,13 @@ class Hidden:
             g_loss_adv = self.bce_with_logits_loss(d_on_encoded_for_enc, g_target_label_encoded.float())
 
             if self.vgg_loss is None:
-                g_loss_enc = self.mse_loss(encoded_images, images)
-                # g_loss_enc = self.mask_loss(encoded_images,images)
+                # g_loss_enc = self.mse_loss(encoded_images, images)
+                g_loss_enc = self.mask_loss(encoded_images,images)
             else:
                 vgg_on_cov = self.vgg_loss(images)
                 vgg_on_enc = self.vgg_loss(encoded_images)
-                g_loss_enc = self.mse_loss(vgg_on_cov, vgg_on_enc)
-                # g_loss_enc = self.mask_loss(encoded_images,images)
+                # g_loss_enc = self.mse_loss(vgg_on_cov, vgg_on_enc)
+                g_loss_enc = self.mask_loss(encoded_images,images)
 
             g_loss_dec = self.mse_loss(decoded_messages, messages)
             g_loss = self.config.adversarial_loss * g_loss_adv + self.config.encoder_loss * g_loss_enc \
@@ -175,7 +173,7 @@ class Hidden:
 
         losses = {
             'loss           ': g_loss.item(),
-            'encoder_mse    ': g_loss_enc.item(),
+            'encoder_loss    ': g_loss_enc.item(),
             'dec_mse        ': g_loss_dec.item(),
             'bitwise-error  ': bitwise_avg_err,
             'adversarial_bce': g_loss_adv.item(),
@@ -186,20 +184,31 @@ class Hidden:
 
     def to_stirng(self):
         return '{}\n{}'.format(str(self.encoder_decoder), str(self.discriminator))
-def mask_loss(output: torch.Tensor,target: torch.Tensor):
-        out_w = output.W
-        out_H = output.H
-        # running_sum = 0
-        for i in range(out_w):
-            for j in range(out_H):
-                if i<(out_w+5)/2 and i>(out_w-5)/2 and j>(out_H-5)/2 and j<(out_H+5)/2:
-                    # running_sum+=((target[i][j]-output[i][j])*1.5)**2
-                    target[i,j]*=1.5
-                    output[i,j]*=1.5
-                else:
-                    #running_sum+=(target[i][j]-output[i][j])**2
-                    pass
-        # loss = torch.mean((output-target)**2) masking with MSE
-        ssim = SSIM().cuda() #masking with ssim
-        loss = 1 - ssim(output,target)
-        return loss
+    
+    def mask_loss(self,output: torch.Tensor,target: torch.Tensor):
+            # target_copy = target.detach()
+            # output_copy = output.detach()
+            out_w = output.size(dim=3)
+            out_H = output.size(dim=3)
+            input_ch = target.size(dim=1)
+            input_b = target.size(dim=0)
+            mask_list = []
+            for i in range(out_w):
+                innerlist = []
+                for j in range(out_H):
+                    if i<(out_w+4)/2 and i>=(out_w-5)/2 and j>=(out_H-5)/2 and j<(out_H+4)/2:
+                        innerlist.append(1.5)
+                    else:
+                        innerlist.append(1.0)
+                mask_list.append(innerlist)
+            mask_array = np.array(mask_list)
+            mask_array = np.tile(mask_array,(input_ch,1,1))
+            res = [mask_array for i in range(input_b)]
+            mask_array = np.array(res)
+            mask_tensor = torch.tensor(mask_array).to(self.device)
+            changed_output = torch.mul(mask_tensor,output)
+            changed_target = torch.mul(mask_tensor,target)
+            # loss = torch.mean(torch.abs(changed_output-changed_target))
+            loss = torch.mean((changed_output-changed_target)**2)
+
+            return loss
